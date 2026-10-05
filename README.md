@@ -11,7 +11,7 @@
 | `80`      | Traefik → API  | via Traefik (requires `Host: api.localhost`) |
 | `8000`    | uvicorn direct | bypass Traefik                               |
 
-## Quick RPS results
+## Quick RPS results — No CPU limit
 
 `ab -n 80000 -c 100`
 
@@ -22,6 +22,40 @@
 | Direct, container IP (no NAT) | 43,472 |
 
 > `localhost:8000` is capped by Docker's port-forwarding NAT, so it lands near Traefik. The true uvicorn ceiling is measured via the container's network IP.
+
+## Quick RPS results — 4 CPU limit
+
+Both containers capped at `cpus: "4.0"`, uvicorn `--workers 4` (1 per core). Same `ab -n 80000 -c 100`.
+
+| Path                          | RPS    |
+| ----------------------------- | ------ |
+| Via Traefik (`localhost:80`)  | 31,314 |
+| Direct (`localhost:8000`)     | 26,169 |
+| Direct, container IP (no NAT) | 34,602 |
+
+## Quick RPS results — 2 CPU limit
+
+Both containers capped at `cpus: "2.0"`, uvicorn `--workers 2` (1 per core). Same `ab -n 80000 -c 100`.
+
+| Path                          | RPS    |
+| ----------------------------- | ------ |
+| Via Traefik (`localhost:80`)  | 21,591 |
+| Direct (`localhost:8000`)     | 17,323 |
+| Direct, container IP (no NAT) | 19,414 |
+
+## Quick RPS results — 1 CPU limit
+
+Both containers capped at `cpus: "1.0"`, uvicorn `--workers 1`. Same `ab -n 80000 -c 100`.
+
+| Path                          | RPS    |
+| ----------------------------- | ------ |
+| Via Traefik (`localhost:80`)  | 12,700 |
+| Direct (`localhost:8000`)     | 9,163  |
+| Direct, container IP (no NAT) | 9,902  |
+
+### Why "via Traefik" can beat "direct"
+
+Direct hits force the single Python worker to spend its one CPU on connection handling (`accept`/epoll/socket I/O across 100 connections). Traefik offloads that to its own container and keeps a persistent keep-alive pool to the backend, so uvicorn just parses/responds. The api is CPU-bound either way (~93%), just doing more useful work behind the proxy.
 
 ## Benchmark details
 
