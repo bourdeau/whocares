@@ -1,0 +1,155 @@
+# FastAPI benchmark with Traefik
+
+## Config
+
+**Host:** `AMD Ryzen 7 9700X (8C/16T) · 30 GiB RAM · NixOS 26.05 (Linux 6.18.54) · Docker 29.8.1`
+
+**App:** `python:3.14-slim` · FastAPI `0.142` · uvicorn `0.54[standard]` (uvloop + httptools) · `--workers 8` (1 per physical core) · `--no-access-log --no-server-header` · Traefik `v3.7`
+
+| Host port | Path           | Purpose                                      |
+| --------- | -------------- | -------------------------------------------- |
+| `80`      | Traefik → API  | via Traefik (requires `Host: api.localhost`) |
+| `8000`    | uvicorn direct | bypass Traefik                               |
+
+## Quick RPS results
+
+`ab -n 80000 -c 100`
+
+| Path                          | RPS    |
+| ----------------------------- | ------ |
+| Via Traefik (`localhost:80`)  | 34,928 |
+| Direct (`localhost:8000`)     | 34,190 |
+| Direct, container IP (no NAT) | 43,472 |
+
+> `localhost:8000` is capped by Docker's port-forwarding NAT, so it lands near Traefik. The true uvicorn ceiling is measured via the container's network IP.
+
+## Benchmark details
+
+```
+docker compose up -d
+
+# Benchmark FastAPI directly
+
+➜ curl http://localhost:8000/
+Hello World
+
+➜ ab -n 80000 -c 100 http://localhost:8000/
+
+This is ApacheBench, Version 2.3 <$Revision: 1934973 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+Licensed to The Apache Software Foundation, http://www.apache.org/
+
+Benchmarking localhost (be patient)
+Completed 8000 requests
+Completed 16000 requests
+Completed 24000 requests
+Completed 32000 requests
+Completed 40000 requests
+Completed 48000 requests
+Completed 56000 requests
+Completed 64000 requests
+Completed 72000 requests
+Completed 80000 requests
+Finished 80000 requests
+
+
+Server Software:
+Server Hostname:        localhost
+Server Port:            8000
+
+Document Path:          /
+Document Length:        11 bytes
+
+Concurrency Level:      100
+Time taken for tests:   2.305 seconds
+Complete requests:      80000
+Failed requests:        0
+Total transferred:      11760000 bytes
+HTML transferred:       880000 bytes
+Requests per second:    34705.95 [#/sec] (mean)
+Time per request:       2.881 [ms] (mean)
+Time per request:       0.029 [ms] (mean, across all concurrent requests)
+Transfer rate:          4982.20 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    0   0.1      0       1
+Processing:     0    3   0.3      3       8
+Waiting:        0    3   0.3      3       8
+Total:          0    3   0.3      3       8
+
+Percentage of the requests served within a certain time (ms)
+  50%      3
+  66%      3
+  75%      3
+  80%      3
+  90%      3
+  95%      3
+  98%      4
+  99%      4
+ 100%      8 (longest request)
+
+
+# Benchmark FastAPI via Traefik
+
+➜ curl -H "Host: api.localhost" http://localhost:80/
+
+Hello World
+
+➜ ab -n 80000 -c 100 -H "Host: api.localhost" http://localhost:80/
+
+This is ApacheBench, Version 2.3 <$Revision: 1934973 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+Licensed to The Apache Software Foundation, http://www.apache.org/
+
+Benchmarking localhost (be patient)
+Completed 8000 requests
+Completed 16000 requests
+Completed 24000 requests
+Completed 32000 requests
+Completed 40000 requests
+Completed 48000 requests
+Completed 56000 requests
+Completed 64000 requests
+Completed 72000 requests
+Completed 80000 requests
+Finished 80000 requests
+
+
+Server Software:
+Server Hostname:        localhost
+Server Port:            80
+
+Document Path:          /
+Document Length:        11 bytes
+
+Concurrency Level:      100
+Time taken for tests:   2.308 seconds
+Complete requests:      80000
+Failed requests:        0
+Total transferred:      10240000 bytes
+HTML transferred:       880000 bytes
+Requests per second:    34661.79 [#/sec] (mean)
+Time per request:       2.885 [ms] (mean)
+Time per request:       0.029 [ms] (mean, across all concurrent requests)
+Transfer rate:          4332.72 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    0   0.2      0       1
+Processing:     0    3   1.7      2      47
+Waiting:        0    2   1.7      2      47
+Total:          1    3   1.7      3      48
+
+Percentage of the requests served within a certain time (ms)
+  50%      3
+  66%      3
+  75%      3
+  80%      4
+  90%      4
+  95%      5
+  98%      5
+  99%      6
+ 100%     48 (longest request)
+
+```
