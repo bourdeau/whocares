@@ -76,6 +76,17 @@ ab -n 80000 -c 100 -p random1k.bin -T application/octet-stream <url>/upload
 
 Each request writes a distinct file on disk, so this route is disk-I/O bound rather than CPU bound — hence throughput well below the `GET /` numbers, and it scales up roughly with worker/core count rather than hitting the CPU ceiling.
 
+## ulimit (`nofile`) findings
+
+Both containers start with Docker's default soft `nofile` limit of **1024** (hard `524288`). Raising the soft limit to `524288` (via `ulimits.nofile` in `docker-compose.yml`) makes **no difference at the benchmark parameters above** — at `-c 100` a worker only holds ~100 sockets plus the file being written, far below 1024.
+
+| ulimit          | `-c 100` (no keep-alive, 8 workers) | `-k -c 2000` (1 worker)          |
+| --------------- | ----------------------------------- | -------------------------------- |
+| soft 1024       | 22,231 / 20,304 / 23,470 RPS        | `Connection reset by peer` (ab aborts) |
+| soft 524288     | 22,087 / 20,314 / 23,496 RPS        | 0 failures, ~6,000 RPS           |
+
+The limit is real but only bites under persistent connections and high concurrency: with `-k -c 2000` a single worker needs ~2000 concurrent socket fds, so the default 1024 limit causes connection resets. It's also a *per-process* limit, so with 8 workers the load spreads and each worker only hits it at very high per-worker concurrency.
+
 ## Benchmark details
 
 ```
