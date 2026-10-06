@@ -18,6 +18,10 @@ services:
       resources:
         limits:
           cpus: "4.0"
+    ulimits:
+      nofile:
+        soft: 524288
+        hard: 524288
 
   api:
     build: .
@@ -29,6 +33,10 @@ services:
       resources:
         limits:
           cpus: "4.0"
+    ulimits:
+      nofile:
+        soft: 524288
+        hard: 524288
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.api.rule=Host(`api.localhost`)"
