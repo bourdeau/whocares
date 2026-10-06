@@ -1,6 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 
+import aiofiles
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 
@@ -19,5 +20,6 @@ def hello():
 async def upload(request: Request):
     data = await request.body()
     path = UPLOAD_DIR / f"{uuid4().hex}.bin"
-    path.write_bytes(data)
+    async with aiofiles.open(path, "wb") as f:
+        await f.write(data)
     return {"path": str(path), "size": len(data)}
