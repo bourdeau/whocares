@@ -5,7 +5,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY main.py ./
 
-RUN pip install --no-cache-dir "fastapi>=0.115" "uvicorn[standard]>=0.34"
+RUN pip install --no-cache-dir "fastapi>=0.115" "uvicorn[standard]>=0.34" "aiofiles>=24"
 
 EXPOSE 8000
 

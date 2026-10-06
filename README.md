@@ -57,6 +57,36 @@ Both containers capped at `cpus: "1.0"`, uvicorn `--workers 1`. Same `ab -n 8000
 
 Direct hits force the single Python worker to spend its one CPU on connection handling (`accept`/epoll/socket I/O across 100 connections). Traefik offloads that to its own container and keeps a persistent keep-alive pool to the backend, so uvicorn just parses/responds. The api is CPU-bound either way (~93%), just doing more useful work behind the proxy.
 
+## Upload endpoint results
+
+`POST /upload` accepts a raw `application/octet-stream` body and writes it to disk (`/tmp/uploads/<uuid>.bin`, via `aiofiles`). Benchmarked with a random 1 KB payload using the same scenarios as the `GET /` runs above:
+
+```sh
+head -c 1024 /dev/urandom > random1k.bin
+ab -n 80000 -c 100 -p random1k.bin -T application/octet-stream <url>/upload
+# via Traefik, add: -H "Host: api.localhost"
+```
+
+| Scenario                | Via Traefik (`localhost:80`) | Direct (`localhost:8000`) | Direct, container IP (no NAT) |
+| ----------------------- | ---------------------------- | ------------------------- | ----------------------------- |
+| No CPU limit, 8 workers | 21,494                       | 20,524                    | 23,498                        |
+| 4 CPU limit, 4 workers  | 14,747                       | 12,587                    | 14,727                        |
+| 2 CPU limit, 2 workers  | 10,168                       | 8,293                     | 9,584                         |
+| 1 CPU limit, 1 worker   | 6,269                        | 4,974                     | 5,452                         |
+
+Each request writes a distinct file on disk, so this route is disk-I/O bound rather than CPU bound — hence throughput well below the `GET /` numbers, and it scales up roughly with worker/core count rather than hitting the CPU ceiling.
+
+## ulimit (`nofile`) findings
+
+Both containers start with Docker's default soft `nofile` limit of **1024** (hard `524288`). Raising the soft limit to `524288` (via `ulimits.nofile` in `docker-compose.yml`) makes **no difference at the benchmark parameters above** — at `-c 100` a worker only holds ~100 sockets plus the file being written, far below 1024.
+
+| ulimit      | `-c 100` (no keep-alive, 8 workers) | `-k -c 2000` (1 worker)                |
+| ----------- | ----------------------------------- | -------------------------------------- |
+| soft 1024   | 22,231 / 20,304 / 23,470 RPS        | `Connection reset by peer` (ab aborts) |
+| soft 524288 | 22,087 / 20,314 / 23,496 RPS        | 0 failures, ~6,000 RPS                 |
+
+The limit is real but only bites under persistent connections and high concurrency: with `-k -c 2000` a single worker needs ~2000 concurrent socket fds, so the default 1024 limit causes connection resets. It's also a _per-process_ limit, so with 8 workers the load spreads and each worker only hits it at very high per-worker concurrency.
+
 ## Benchmark details
 
 ```
