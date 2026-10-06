@@ -57,6 +57,25 @@ Both containers capped at `cpus: "1.0"`, uvicorn `--workers 1`. Same `ab -n 8000
 
 Direct hits force the single Python worker to spend its one CPU on connection handling (`accept`/epoll/socket I/O across 100 connections). Traefik offloads that to its own container and keeps a persistent keep-alive pool to the backend, so uvicorn just parses/responds. The api is CPU-bound either way (~93%), just doing more useful work behind the proxy.
 
+## Upload endpoint results
+
+`POST /upload` accepts a raw `application/octet-stream` body and writes it to disk (`/tmp/uploads/<uuid>.bin`, via `aiofiles`). Benchmarked with a random 1 KB payload using the same scenarios as the `GET /` runs above:
+
+```sh
+head -c 1024 /dev/urandom > random1k.bin
+ab -n 80000 -c 100 -p random1k.bin -T application/octet-stream <url>/upload
+# via Traefik, add: -H "Host: api.localhost"
+```
+
+| Scenario                  | Via Traefik (`localhost:80`) | Direct (`localhost:8000`) | Direct, container IP (no NAT) |
+| ------------------------- | ---------------------------- | ------------------------- | ----------------------------- |
+| No CPU limit, 8 workers   | 21,494                       | 20,524                    | 23,498                        |
+| 4 CPU limit, 4 workers    | 14,747                       | 12,587                    | 14,727                        |
+| 2 CPU limit, 2 workers    | 10,168                       | 8,293                     | 9,584                         |
+| 1 CPU limit, 1 worker     | 6,269                        | 4,974                     | 5,452                         |
+
+Each request writes a distinct file on disk, so this route is disk-I/O bound rather than CPU bound — hence throughput well below the `GET /` numbers, and it scales up roughly with worker/core count rather than hitting the CPU ceiling.
+
 ## Benchmark details
 
 ```
