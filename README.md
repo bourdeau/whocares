@@ -217,3 +217,5 @@ Percentage of the requests served within a certain time (ms)
  100%     48 (longest request)
 
 ```
+
+API Gateway benchmark: https://github.com/howardjohn/gateway-api-bench
